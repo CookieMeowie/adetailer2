@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from functools import partial
 from types import SimpleNamespace
-from typing import Any, Callable
+from typing import Any
 
 import gradio as gr
 
@@ -21,15 +20,6 @@ cn_module_choices = [
 class Widgets(SimpleNamespace):
     def tolist(self):
         return [getattr(self, attr) for attr in ALL_ARGS.attrs]
-
-
-@dataclass
-class WebuiInfo:
-    ad_model_list: list[str]
-    sampler_names: list[str]
-    t2i_button: gr.Button
-    i2i_button: gr.Button
-    checkpoints_list: Callable
 
 
 def gr_interactive(value: bool = True):
@@ -74,7 +64,10 @@ def elem_id(item_id: str, n: int, is_img2img: bool) -> str:
 def adui(
     num_models: int,
     is_img2img: bool,
-    webui_info: WebuiInfo,
+    model_list: list[str],
+    samplers: list[str],
+    t2i_button: gr.Button,
+    i2i_button: gr.Button,
 ):
     states = []
     infotext_fields = []
@@ -104,7 +97,10 @@ def adui(
                     state, infofields = one_ui_group(
                         n=n,
                         is_img2img=is_img2img,
-                        webui_info=webui_info,
+                        model_list=model_list,
+                        samplers=samplers,
+                        t2i_button=t2i_button,
+                        i2i_button=i2i_button,
                     )
 
                 states.append(state)
@@ -115,17 +111,20 @@ def adui(
     return components, infotext_fields
 
 
-def one_ui_group(n: int, is_img2img: bool, webui_info: WebuiInfo):
+def one_ui_group(
+    n: int,
+    is_img2img: bool,
+    model_list: list[str],
+    samplers: list[str],
+    t2i_button: gr.Button,
+    i2i_button: gr.Button,
+):
     w = Widgets()
     state = gr.State({})
     eid = partial(elem_id, n=n, is_img2img=is_img2img)
 
     with gr.Row():
-        model_choices = (
-            [*webui_info.ad_model_list, "None"]
-            if n == 0
-            else ["None", *webui_info.ad_model_list]
-        )
+        model_choices = [*model_list, "None"] if n == 0 else ["None", *model_list]
 
         w.ad_model = gr.Dropdown(
             label="ADetailer model" + suffix(n),
@@ -175,13 +174,13 @@ def one_ui_group(n: int, is_img2img: bool, webui_info: WebuiInfo):
         with gr.Accordion(
             "Inpainting", open=False, elem_id=eid("ad_inpainting_accordion")
         ):
-            inpainting(w, n, is_img2img, webui_info)
+            inpainting(w, n, is_img2img, samplers)
 
     with gr.Group():
         controlnet(w, n, is_img2img)
 
     all_inputs = [state, *w.tolist()]
-    target_button = webui_info.i2i_button if is_img2img else webui_info.t2i_button
+    target_button = i2i_button if is_img2img else t2i_button
     target_button.click(
         fn=on_generate_click, inputs=all_inputs, outputs=state, queue=False
     )
@@ -281,7 +280,7 @@ def mask_preprocessing(w: Widgets, n: int, is_img2img: bool):
             )
 
 
-def inpainting(w: Widgets, n: int, is_img2img: bool, webui_info: WebuiInfo):
+def inpainting(w: Widgets, n: int, is_img2img: bool, samplers: list[str]):
     eid = partial(elem_id, n=n, is_img2img=is_img2img)
 
     with gr.Group():
@@ -419,27 +418,6 @@ def inpainting(w: Widgets, n: int, is_img2img: bool, webui_info: WebuiInfo):
 
         with gr.Row():
             with gr.Column(variant="compact"):
-                w.ad_use_checkpoint = gr.Checkbox(
-                    label="Use separate checkpoint (experimental)" + suffix(n),
-                    value=False,
-                    visible=True,
-                    elem_id=eid("ad_use_checkpoint"),
-                )
-
-                ckpts = [
-                    "Use same checkpoint",
-                    *webui_info.checkpoints_list(use_short=True),
-                ]
-
-                w.ad_checkpoint = gr.Dropdown(
-                    label="ADetailer checkpoint" + suffix(n),
-                    choices=ckpts,
-                    value=ckpts[0],
-                    visible=True,
-                    elem_id=eid("ad_checkpoint"),
-                )
-
-            with gr.Column(variant="compact"):
                 w.ad_use_sampler = gr.Checkbox(
                     label="Use separate sampler" + suffix(n),
                     value=False,
@@ -449,8 +427,8 @@ def inpainting(w: Widgets, n: int, is_img2img: bool, webui_info: WebuiInfo):
 
                 w.ad_sampler = gr.Dropdown(
                     label="ADetailer sampler" + suffix(n),
-                    choices=webui_info.sampler_names,
-                    value=webui_info.sampler_names[0],
+                    choices=samplers,
+                    value=samplers[0],
                     visible=True,
                     elem_id=eid("ad_sampler"),
                 )
@@ -462,7 +440,6 @@ def inpainting(w: Widgets, n: int, is_img2img: bool, webui_info: WebuiInfo):
                     queue=False,
                 )
 
-        with gr.Row():
             with gr.Column(variant="compact"):
                 w.ad_use_noise_multiplier = gr.Checkbox(
                     label="Use separate noise multiplier" + suffix(n),
@@ -488,6 +465,7 @@ def inpainting(w: Widgets, n: int, is_img2img: bool, webui_info: WebuiInfo):
                     queue=False,
                 )
 
+        with gr.Row():
             with gr.Column(variant="compact"):
                 w.ad_use_clip_skip = gr.Checkbox(
                     label="Use separate CLIP skip" + suffix(n),
@@ -513,12 +491,12 @@ def inpainting(w: Widgets, n: int, is_img2img: bool, webui_info: WebuiInfo):
                     queue=False,
                 )
 
-        with gr.Row(), gr.Column(variant="compact"):
-            w.ad_restore_face = gr.Checkbox(
-                label="Restore faces after ADetailer" + suffix(n),
-                value=False,
-                elem_id=eid("ad_restore_face"),
-            )
+            with gr.Column(variant="compact"):
+                w.ad_restore_face = gr.Checkbox(
+                    label="Restore faces after ADetailer" + suffix(n),
+                    value=False,
+                    elem_id=eid("ad_restore_face"),
+                )
 
 
 def controlnet(w: Widgets, n: int, is_img2img: bool):
