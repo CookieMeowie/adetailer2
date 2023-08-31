@@ -5,6 +5,9 @@ version: "3"
 dotenv:
   - .env
 
+vars:
+  SHELL: '{{if eq .OS "Windows_NT"}}powershell{{end}}'
+
 tasks:
   default:
     cmds:
@@ -15,8 +18,7 @@ tasks:
   launch:
     dir: "{{.WEBUI}}"
     cmds:
-      - "{{.PYTHON}} launch.py --xformers --api"
-    silent: true
+      - "{{.PYTHON}} launch.py --xformers --api --autolaunch"
 
   lint:
     cmds:
